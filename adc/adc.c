@@ -23,25 +23,21 @@
 #define SSD_WIDTH 128
 #define SSD_HEIGHT 64
 
-// Definições do PWM para alcançar uma fPWM de 10kHz
+// Definições do PWM para LEDs (10 kHz)
 #define WRAP 2048
 #define CLK_DIV 6.1
 
+// Definições do PWM para Buzzers (2 kHz)
+#define BUZZER_WRAP 62500  // 125 MHz / 2000 Hz = 62500
+#define BUZZER_CLK_DIV 1.0
+#define BUZZER_DURATION_MS 500
+
 // Definições do Joystick
-#define X_JOY_PIN 26  
-#define Y_JOY_PIN 27  
 #define BUTTON_JOY_PIN 22 
-#define MOV_TOLERANCE 200
-
-#define LIM_MAX_X 52 
-#define LIM_INIT_X 4
-
-#define LIM_MAX_Y 110
-#define LIM_INIT_Y 4
 
 // Buzzers
-#define BUZZER_A_PIN 21
-#define BUZZER_B_PIN 10
+#define BUZZER_A_PIN 21  // PWM 5A
+#define BUZZER_B_PIN 10  // PWM 5B
 
 // Matriz de Leds 
 #define MATRIZ_LEDS_PIN 7
@@ -52,13 +48,13 @@
 #define MIC_CHANNEL 2
 #define ADC_CLK_DIV 21.f
 #define SILENCE_LEVEL 2048
-#define DMA_BUFFER_SIZE 79  // ~10 ms
+#define DMA_BUFFER_SIZE 79
 #define AMPL_LEVEL_1 100
-#define AMPL_LEVEL_2 200
-#define AMPL_LEVEL_3 300
+#define AMPL_LEVEL_2 250
+#define AMPL_LEVEL_3 350
 #define AMPL_LEVEL_4 450
-#define AMPL_LEVEL_5 550
-#define UPDATE_INTERVAL_MS 75  // 5 Hz (200 ms por atualização)
+#define AMPL_LEVEL_5 750
+#define UPDATE_INTERVAL_MS 75
 
 // Definições de Botões e LEDS
 #define BUTTON_A_PIN 5 
@@ -68,37 +64,36 @@
 #define LED_R_PIN 13
 
 // Variáveis globais
-uint16_t joy_x, joy_y;
 ssd1306_t ssd;
 uint dma_channel;
 dma_channel_config dma_cfg;
 PIO pio = pio0;
 uint sm;
 const uint coluns_index[5][5] = {
-    {4, 5, 14, 15, 24}, // Coluna 0 (esquerda)
+    {4, 5, 14, 15, 24},
     {3, 6, 13, 16, 23},
     {2, 7, 12, 17, 22},
     {1, 8, 11, 18, 21},
-    {0, 9, 10, 19, 20}, // Coluna 4 (direita)
+    {0, 9, 10, 19, 20}
 };
 volatile uint8_t heights[5] = {0};
 volatile uint16_t mic_buffer[DMA_BUFFER_SIZE];
 volatile uint event_time = 0;
-volatile bool pwm_enable = true, dma_irq_enable = true, buzzers_enable = true;
-volatile uint32_t time_last_led_update = 0, time_last_buzzer_on = 0;
-volatile uint8_t peak_height = 0, amplitude_peak_count = 0;
+volatile bool pwm_enable = true, dma_enabled = true, buzzers_enable = true;
+volatile uint32_t last_update_time = 0, last_buzzer_on = 0;
+volatile uint8_t peak_height = 0;
+volatile uint amplitude_peak_count = 0;
 
 // Protótipos
 void setup();
 void setup_adc_dma();
 void init_buttons();
-void init_leds();
+void init_leds_buzzers();
 void init_i2c_display(ssd1306_t *ssd);
 void init_matrix_leds();
-void set_led_brightness(uint pos_x, uint pos_y);
 void button_irq_handler(uint gpio, uint32_t events);
-void draw_square(uint pos_x, uint pos_y);
 void update_leds();
+void noise_alert();
 uint32_t matrix_led_color(float red, float green, float blue);
 
 void main() {
@@ -107,21 +102,16 @@ void main() {
     ssd1306_rect(&ssd, 3, 3, 122, 60, 1, 0);
 
     while (true) {
-        // Leituras do Joystick (descomente se necessário)
-        /*
-        adc_select_input(0);
-        joy_x = adc_read();
-        adc_select_input(1);
-        joy_y = adc_read();
-        set_led_brightness(joy_x, joy_y);
-        draw_square(joy_x, joy_y);
-        */
+        if (amplitude_peak_count > 0 && amplitude_peak_count % 20 == 0) {
+            noise_alert();
+            amplitude_peak_count = 0;  // Resetar após o alerta
+        }
     }
 }
 
 void setup() {
     init_buttons();
-    init_leds();
+    init_leds_buzzers();
     init_matrix_leds();
     setup_adc_dma();
     init_i2c_display(&ssd);
@@ -137,7 +127,8 @@ void init_buttons() {
     }
 }
 
-void init_leds() {
+void init_leds_buzzers() {
+    // LEDs
     uint8_t leds[3] = {LED_G_PIN, LED_B_PIN, LED_R_PIN};
     for (uint8_t i = 0; i < 3; i++) {
         gpio_set_function(leds[i], GPIO_FUNC_PWM);
@@ -147,6 +138,16 @@ void init_leds() {
         pwm_set_chan_level(slice, PWM_CHAN_A, 0);
         pwm_set_enabled(slice, true);
     }
+
+    // Buzzers
+    gpio_set_function(BUZZER_A_PIN, GPIO_FUNC_PWM);  // PWM 5A
+    gpio_set_function(BUZZER_B_PIN, GPIO_FUNC_PWM);  // PWM 5B
+    uint buzzer_slice = pwm_gpio_to_slice_num(BUZZER_A_PIN);
+    pwm_set_clkdiv(buzzer_slice, BUZZER_CLK_DIV);
+    pwm_set_wrap(buzzer_slice, BUZZER_WRAP);  // 2 kHz
+    pwm_set_chan_level(buzzer_slice, PWM_CHAN_A, 0);
+    pwm_set_chan_level(buzzer_slice, PWM_CHAN_B, 0);
+    pwm_set_enabled(buzzer_slice, false);
 }
 
 void init_matrix_leds() {
@@ -170,7 +171,7 @@ void init_i2c_display(ssd1306_t *ssd) {
 }
 
 void dma_irq_handler() {
-    if (dma_channel_get_irq0_status(dma_channel)) {
+    if (dma_channel_get_irq0_status(dma_channel) && dma_enabled) {
         dma_channel_acknowledge_irq0(dma_channel);
         uint16_t peak_amplitude = 0;
         for (uint i = 0; i < DMA_BUFFER_SIZE; i++) {
@@ -179,27 +180,26 @@ void dma_irq_handler() {
             if (amplitude > peak_amplitude) peak_amplitude = amplitude;
         }
 
-        uint8_t height;
+        uint8_t height = 0;
         if (peak_amplitude >= AMPL_LEVEL_1) {
-          if (peak_amplitude < AMPL_LEVEL_2) height = 1;
-          else if (peak_amplitude < AMPL_LEVEL_3) height = 2;
-          else if (peak_amplitude < AMPL_LEVEL_4) height = 3;
-          else if (peak_amplitude < AMPL_LEVEL_5) height = 4;
-          else height = 5;
+            if (peak_amplitude < AMPL_LEVEL_2) height = 1;
+            else if (peak_amplitude < AMPL_LEVEL_3) height = 2;
+            else if (peak_amplitude < AMPL_LEVEL_4) height = 3;
+            else if (peak_amplitude < AMPL_LEVEL_5) height = 4;
+            else height = 5;
         }
 
-        peak_height = height;  // Armazena o pico mais recente
+        if (height == 5) amplitude_peak_count++;
 
-        // Controle de taxa com temporizador
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        if (current_time - time_last_led_update >= UPDATE_INTERVAL_MS) {
+        if (current_time - last_update_time >= UPDATE_INTERVAL_MS) {
             for (uint8_t i = 0; i < 4; i++) {
                 heights[i] = heights[i + 1];
             }
-            heights[4] = peak_height;
+            heights[4] = height;
             update_leds();
-            time_last_led_update = current_time;
-            printf("Pico: %d, Heights: %d %d %d %d %d\n", peak_amplitude, heights[0], heights[1], heights[2], heights[3], heights[4]);
+            last_update_time = current_time;
+            printf("Pico: %d, Heights: %d %d %d %d %d, Peaks: %d\n", peak_amplitude, heights[0], heights[1], heights[2], heights[3], heights[4], amplitude_peak_count);
         }
 
         dma_channel_set_write_addr(dma_channel, mic_buffer, true);
@@ -208,8 +208,6 @@ void dma_irq_handler() {
 
 void setup_adc_dma() {
     adc_init();
-    adc_gpio_init(X_JOY_PIN);
-    adc_gpio_init(Y_JOY_PIN);
     adc_gpio_init(MICROPHONE_PIN);
     adc_select_input(MIC_CHANNEL);
     adc_fifo_setup(true, true, 1, false, false);
@@ -224,18 +222,10 @@ void setup_adc_dma() {
     dma_channel_set_irq0_enabled(dma_channel, true);
 
     irq_set_exclusive_handler(DMA_IRQ_0, dma_irq_handler);
-    irq_set_enabled(DMA_IRQ_0, dma_irq_enable);
+    irq_set_enabled(DMA_IRQ_0, true);
 
     dma_channel_configure(dma_channel, &dma_cfg, mic_buffer, &adc_hw->fifo, DMA_BUFFER_SIZE, true);
     adc_run(true);
-}
-
-void set_led_brightness(uint pos_x, uint pos_y) {
-    int bright_A = abs(pos_x - WRAP) < MOV_TOLERANCE ? 0 : abs(pos_x - WRAP);
-    int bright_B = abs(pos_y - WRAP) < MOV_TOLERANCE ? 0 : abs(pos_y - WRAP);
-
-    //pwm_set_chan_level(slice_1, PWM_CHAN_A, bright_A);
-    //pwm_set_chan_level(slice_2, PWM_CHAN_B, bright_B);
 }
 
 void button_irq_handler(uint gpio, uint32_t events) {
@@ -243,47 +233,32 @@ void button_irq_handler(uint gpio, uint32_t events) {
     if (current_time - event_time > 200) {
         event_time = current_time;
 
-        // Desativa ou volta a ativar a interrupção do DMA para processamento dos dados analógicos do Microfone
         if (gpio == BUTTON_A_PIN) {
-          dma_irq_enable = !dma_irq_enable;
-          irq_set_enabled(DMA_IRQ_0, dma_irq_enable);
-          if (dma_irq_enable) dma_channel_set_write_addr(dma_channel, mic_buffer, true);
-          
-          // Limpa a Matriz de Leds
-          else {
-            for (uint8_t i = 0; i < NUM_LEDS; i++) {
-              pio_sm_put_blocking(pio, sm, matrix_led_color(0.0, 0.0, 0.0));
+            dma_enabled = !dma_enabled;
+            if (dma_enabled) {
+                printf("DMA Ativado - Ouvindo\n");
+                adc_run(true);
+                dma_channel_set_irq0_enabled(dma_channel, true);
+                dma_channel_configure(dma_channel, &dma_cfg, mic_buffer, &adc_hw->fifo, DMA_BUFFER_SIZE, true);
+            } else {
+                printf("DMA Desativado - Parado\n");
+                adc_run(false);
+                dma_channel_set_irq0_enabled(dma_channel, false);
+                for (uint8_t i = 0; i < NUM_LEDS; i++) {
+                    pio_sm_put_blocking(pio, sm, matrix_led_color(0.0, 0.0, 0.0));
+                }
             }
-          }
         }
 
         if (gpio == BUTTON_B_PIN) {
-          buzzers_enable = !buzzers_enable;
+            buzzers_enable = !buzzers_enable;
+            printf("Buzzers %s\n", buzzers_enable ? "Ativados" : "Desativados");
         }
 
         if (gpio == BUTTON_JOY_PIN) {
-          printf("Botao Joy\n");
+            printf("Botao Joy\n");
         }
     }
-}
-
-void draw_square(uint pos_x, uint pos_y) {
-    static uint8_t current_pos_x = (SSD_HEIGHT / 2) - 4;
-    static uint8_t current_pos_y = (SSD_WIDTH / 2) - 4;
-
-    uint mov_div_x = (WRAP * 2) / SSD_HEIGHT;
-    uint mov_div_y = (WRAP * 2) / SSD_WIDTH;
-
-    ssd1306_rect(&ssd, current_pos_x, current_pos_y, 8, 8, 0, 1);
-
-    if ((uint8_t)(pos_x / mov_div_x) < LIM_MAX_X && (uint8_t)(pos_x / mov_div_x) > LIM_INIT_X)
-        current_pos_x = (uint8_t)(pos_x / mov_div_x);
-
-    if ((uint8_t)(pos_y / mov_div_y) < LIM_MAX_Y && (uint8_t)(pos_y / mov_div_y) > LIM_INIT_Y)
-        current_pos_y = (uint8_t)(pos_y / mov_div_y);
-
-    ssd1306_rect(&ssd, current_pos_x, current_pos_y, 8, 8, 1, 1);
-    ssd1306_send_data(&ssd);
 }
 
 void update_leds() {
@@ -292,11 +267,11 @@ void update_leds() {
         if (heights[index_1] > 0) {
             float red = 0.0, green = 0.0, blue = 0.0;
             switch (heights[index_1]) {
-                case 1: red = 0.0; green = 1.0; blue = 0.0; break;  // Verde
-                case 2: red = 0.5; green = 0.75; blue = 0.0; break; // Verde fraco/amarelado
-                case 3: red = 1.0; green = 1.0; blue = 0.0; break;  // Amarelo
-                case 4: red = 1.0; green = 0.5; blue = 0.0; break;  // Amarelo fraco/avermelhado
-                case 5: red = 1.0; green = 0.0; blue = 0.0; break;  // Amarelo fraco/avermelhado
+                case 1: red = 0.0; green = 1.0; blue = 0.0; break;
+                case 2: red = 0.5; green = 0.75; blue = 0.0; break;
+                case 3: red = 1.0; green = 1.0; blue = 0.0; break;
+                case 4: red = 1.0; green = 0.5; blue = 0.0; break;
+                case 5: red = 1.0; green = 0.0; blue = 0.0; break;
                 default: red = 0.0; green = 0.0; blue = 0.0; break;
             }
             uint32_t color = matrix_led_color(red, green, blue);
@@ -310,6 +285,25 @@ void update_leds() {
         pio_sm_put_blocking(pio, sm, colors[i]);
     }
 }
+
+void noise_alert() {
+    if (buzzers_enable) {
+        uint buzzer_slice = pwm_gpio_to_slice_num(BUZZER_A_PIN);
+        pwm_set_chan_level(buzzer_slice, PWM_CHAN_A, BUZZER_WRAP / 2);
+        pwm_set_chan_level(buzzer_slice, PWM_CHAN_B, BUZZER_WRAP / 2);
+        pwm_set_enabled(buzzer_slice, true);
+
+        last_buzzer_on = to_ms_since_boot(get_absolute_time());
+        while (to_ms_since_boot(get_absolute_time()) - last_buzzer_on < BUZZER_DURATION_MS) {
+            tight_loop_contents();
+        }
+
+        pwm_set_enabled(buzzer_slice, false);
+        pwm_set_chan_level(buzzer_slice, PWM_CHAN_A, 0);
+        pwm_set_chan_level(buzzer_slice, PWM_CHAN_B, 0);
+    }
+}
+
 
 uint32_t matrix_led_color(float red, float green, float blue) {
     unsigned char G = green * 255;
