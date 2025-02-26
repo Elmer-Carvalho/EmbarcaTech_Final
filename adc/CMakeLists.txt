@@ -52,6 +52,7 @@ pico_enable_stdio_usb(adc 1)
 # Add the standard library to the build
 target_link_libraries(adc
         pico_stdlib
+        pico_time
         hardware_adc
         hardware_pwm
         hardware_i2c
