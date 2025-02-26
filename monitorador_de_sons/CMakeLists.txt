@@ -34,23 +34,23 @@ project(adc C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(adc 
-    adc.c 
+add_executable(monitorador_de_sons 
+    monitorador_de_sons.c 
     ./inc/ssd1306.c
 )
 
 # Gera o cabeçalho PIO a partir do arquivo pio_matrix.pio
-pico_generate_pio_header(adc ${CMAKE_CURRENT_LIST_DIR}/inc/pio_matrix.pio)
+pico_generate_pio_header(monitorador_de_sons ${CMAKE_CURRENT_LIST_DIR}/inc/pio_matrix.pio)
 
-pico_set_program_name(adc "adc")
-pico_set_program_version(adc "0.1")
+pico_set_program_name(monitorador_de_sons "monitorador_de_sons")
+pico_set_program_version(monitorador_de_sons "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(adc 1)
-pico_enable_stdio_usb(adc 1)
+pico_enable_stdio_uart(monitorador_de_sons 1)
+pico_enable_stdio_usb(monitorador_de_sons 1)
 
 # Add the standard library to the build
-target_link_libraries(adc
+target_link_libraries(monitorador_de_sons
         pico_stdlib
         pico_time
         hardware_adc
@@ -62,15 +62,15 @@ target_link_libraries(adc
         
 
 # Add the standard include files to the build
-target_include_directories(adc PRIVATE
+target_include_directories(monitorador_de_sons PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/inc  # Garante que ./inc esteja no caminho de inclusão
 )
 
 # Add any user requested libraries
-target_link_libraries(adc 
+target_link_libraries(monitorador_de_sons 
         
         )
 
-pico_add_extra_outputs(adc)
+pico_add_extra_outputs(monitorador_de_sons)
 
