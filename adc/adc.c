@@ -18,10 +18,13 @@
 #define I2C_SDA_PIN 14
 #define I2C_SCL_PIN 15
 
+#define DELAY_UART_MS 3000
+
 // Definições do Display 
 #define SSD_ADDR 0x3C
 #define SSD_WIDTH 128
 #define SSD_HEIGHT 64
+#define BORDER_DUR_MS 50
 
 // Definições do PWM para LEDs (10 kHz)
 #define WRAP 2048
@@ -79,10 +82,10 @@ const uint coluns_index[5][5] = {
 volatile uint8_t heights[5] = {0};
 volatile uint16_t mic_buffer[DMA_BUFFER_SIZE];
 volatile uint event_time = 0;
-volatile bool pwm_enable = true, dma_enabled = true, buzzers_enable = true;
-volatile uint32_t last_update_time = 0, last_buzzer_on = 0;
+volatile bool pwm_enable = true, dma_enabled = true, buzzers_enable = true, border_on = true, serial_on = true;
+volatile uint32_t last_update_time = 0, last_buzzer_on = 0, last_border_blink = 0;
 volatile uint8_t peak_height = 0;
-volatile uint amplitude_peak_count = 0;
+volatile uint amplitude_peak_count = 0, max_peak = 0, sum_peaks = 0, count_peaks = 0, sum_sounds = 0, count_sounds = 0;
 
 // Protótipos
 void setup();
@@ -99,12 +102,34 @@ uint32_t matrix_led_color(float red, float green, float blue);
 void main() {
     stdio_init_all();
     setup();
+
     ssd1306_rect(&ssd, 3, 3, 122, 60, 1, 0);
+    ssd1306_draw_string(&ssd, "MONITORANDO", (SSD_WIDTH/2) - ((sizeof("MONITORANDO") * 8) / 2), 20);
+    ssd1306_draw_string(&ssd, "SONS", (SSD_WIDTH/2) - ((sizeof("SONS") * 8) / 2), 35);
+    ssd1306_send_data(&ssd);
 
     while (true) {
         if (amplitude_peak_count > 0 && amplitude_peak_count % 20 == 0) {
             noise_alert();
             amplitude_peak_count = 0;  // Resetar após o alerta
+            ssd1306_fill(&ssd, false);
+            ssd1306_rect(&ssd, 3, 3, 122, 60, 1, 0);
+            ssd1306_draw_string(&ssd, "MONITORANDO", (SSD_WIDTH/2) - ((sizeof("MONITORANDO") * 8) / 2), 20);
+            ssd1306_draw_string(&ssd, "SONS", (SSD_WIDTH/2) - ((sizeof("SONS") * 8) / 2), 35);
+            ssd1306_send_data(&ssd);
+        }
+
+        if (to_ms_since_boot(get_absolute_time()) % DELAY_UART_MS == 0) {
+          if (serial_on) {
+            printf("\n");
+            printf("RELATÓRIO GERADO A CADA -- %ims --:\n", DELAY_UART_MS);
+            printf("Nível da Amplitude Máxima -- %i\n", max_peak);
+            printf("Nível Médio de Amplitudes maiores que %i -- %i\n", AMPL_LEVEL_5, sum_peaks / count_peaks);
+            printf("Quantidade de amostras maiores que %i -- %i\n", AMPL_LEVEL_5, count_peaks);
+            printf("Nível Médio de Amplitude -- %i\n", sum_sounds / count_sounds);
+            printf("Quantidade de amostras: -- %i\n", count_sounds); 
+          }
+          sum_peaks = 0; count_peaks = 0; sum_sounds = 0; count_sounds = 0; max_peak = 0;
         }
     }
 }
@@ -177,8 +202,14 @@ void dma_irq_handler() {
         for (uint i = 0; i < DMA_BUFFER_SIZE; i++) {
             int16_t adjusted = (int16_t)mic_buffer[i] - SILENCE_LEVEL;
             uint16_t amplitude = (adjusted >= 0) ? adjusted : -adjusted;
+
+            sum_sounds += amplitude;
+            count_sounds++;
+
             if (amplitude > peak_amplitude) peak_amplitude = amplitude;
         }
+
+        max_peak = peak_amplitude > max_peak ? peak_amplitude : max_peak;
 
         uint8_t height = 0;
         if (peak_amplitude >= AMPL_LEVEL_1) {
@@ -186,7 +217,7 @@ void dma_irq_handler() {
             else if (peak_amplitude < AMPL_LEVEL_3) height = 2;
             else if (peak_amplitude < AMPL_LEVEL_4) height = 3;
             else if (peak_amplitude < AMPL_LEVEL_5) height = 4;
-            else height = 5;
+            else {height = 5; sum_peaks += peak_amplitude; count_peaks++;}
         }
 
         if (height == 5) amplitude_peak_count++;
@@ -199,7 +230,6 @@ void dma_irq_handler() {
             heights[4] = height;
             update_leds();
             last_update_time = current_time;
-            printf("Pico: %d, Heights: %d %d %d %d %d, Peaks: %d\n", peak_amplitude, heights[0], heights[1], heights[2], heights[3], heights[4], amplitude_peak_count);
         }
 
         dma_channel_set_write_addr(dma_channel, mic_buffer, true);
@@ -236,27 +266,27 @@ void button_irq_handler(uint gpio, uint32_t events) {
         if (gpio == BUTTON_A_PIN) {
             dma_enabled = !dma_enabled;
             if (dma_enabled) {
-                printf("DMA Ativado - Ouvindo\n");
                 adc_run(true);
                 dma_channel_set_irq0_enabled(dma_channel, true);
                 dma_channel_configure(dma_channel, &dma_cfg, mic_buffer, &adc_hw->fifo, DMA_BUFFER_SIZE, true);
             } else {
-                printf("DMA Desativado - Parado\n");
                 adc_run(false);
                 dma_channel_set_irq0_enabled(dma_channel, false);
                 for (uint8_t i = 0; i < NUM_LEDS; i++) {
                     pio_sm_put_blocking(pio, sm, matrix_led_color(0.0, 0.0, 0.0));
                 }
             }
+            if (serial_on) printf("\n--> Captação de Som foi: %s\n", dma_enabled ? "Ativada" : "Desativada");
         }
 
         if (gpio == BUTTON_B_PIN) {
             buzzers_enable = !buzzers_enable;
-            printf("Buzzers %s\n", buzzers_enable ? "Ativados" : "Desativados");
+            if (serial_on) printf("\n--> Buzzers Passivos foram: %s\n", buzzers_enable ? "Ativados" : "Desativados");
         }
 
         if (gpio == BUTTON_JOY_PIN) {
-            printf("Botao Joy\n");
+            serial_on = !serial_on;
+            if (serial_on) printf("\n-- COMUNICAÇÃO ATIVADA --\n");
         }
     }
 }
@@ -287,17 +317,28 @@ void update_leds() {
 }
 
 void noise_alert() {
+    uint buzzer_slice = pwm_gpio_to_slice_num(BUZZER_A_PIN);
+
     if (buzzers_enable) {
-        uint buzzer_slice = pwm_gpio_to_slice_num(BUZZER_A_PIN);
         pwm_set_chan_level(buzzer_slice, PWM_CHAN_A, BUZZER_WRAP / 2);
         pwm_set_chan_level(buzzer_slice, PWM_CHAN_B, BUZZER_WRAP / 2);
         pwm_set_enabled(buzzer_slice, true);
+    }
 
-        last_buzzer_on = to_ms_since_boot(get_absolute_time());
-        while (to_ms_since_boot(get_absolute_time()) - last_buzzer_on < BUZZER_DURATION_MS) {
-            tight_loop_contents();
+    ssd1306_fill(&ssd, false);
+    ssd1306_draw_string(&ssd, "SILENCIO", (SSD_WIDTH/2) - ((sizeof("SILENCIO") * 8) / 2), 31);
+
+    last_buzzer_on = to_ms_since_boot(get_absolute_time());
+    while (to_ms_since_boot(get_absolute_time()) - last_buzzer_on < BUZZER_DURATION_MS) {
+        if ((to_ms_since_boot(get_absolute_time()) - last_border_blink) >= BORDER_DUR_MS) {
+          border_on = !border_on;
+          ssd1306_rect(&ssd, 3, 3, 122, 60, border_on, 0);
+          ssd1306_send_data(&ssd);
+          last_border_blink = to_ms_since_boot(get_absolute_time());
         }
+    }
 
+    if (buzzers_enable) {
         pwm_set_enabled(buzzer_slice, false);
         pwm_set_chan_level(buzzer_slice, PWM_CHAN_A, 0);
         pwm_set_chan_level(buzzer_slice, PWM_CHAN_B, 0);
