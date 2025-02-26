@@ -34,8 +34,13 @@ project(adc C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
+add_executable(adc 
+    adc.c 
+    ./inc/ssd1306.c
+)
 
-add_executable(adc adc.c ssd1306.c)
+# Gera o cabeçalho PIO a partir do arquivo pio_matrix.pio
+pico_generate_pio_header(adc ${CMAKE_CURRENT_LIST_DIR}/inc/pio_matrix.pio)
 
 pico_set_program_name(adc "adc")
 pico_set_program_version(adc "0.1")
@@ -49,12 +54,16 @@ target_link_libraries(adc
         pico_stdlib
         hardware_adc
         hardware_pwm
-        hardware_i2c)
+        hardware_i2c
+        hardware_pio
+        hardware_dma
+)
         
 
 # Add the standard include files to the build
 target_include_directories(adc PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/inc  # Garante que ./inc esteja no caminho de inclusão
 )
 
 # Add any user requested libraries
