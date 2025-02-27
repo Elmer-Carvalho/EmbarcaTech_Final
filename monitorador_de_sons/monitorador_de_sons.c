@@ -41,9 +41,6 @@ Data de Finalização: 26/02/2025
 #define BUZZER_CLK_DIV 1.0
 #define BUZZER_DURATION_MS 500
 
-// Definições do Joystick
-#define BUTTON_JOY_PIN 22 
-
 // Buzzers
 #define BUZZER_A_PIN 21  // PWM 5A
 #define BUZZER_B_PIN 10  // PWM 5B
@@ -65,12 +62,10 @@ Data de Finalização: 26/02/2025
 #define AMPL_LEVEL_5 750
 #define UPDATE_INTERVAL_MS 75
 
-// Definições de Botões e LEDS
+// Definições de Botões
 #define BUTTON_A_PIN 5 
 #define BUTTON_B_PIN 6
-#define LED_G_PIN 11
-#define LED_B_PIN 12
-#define LED_R_PIN 13
+#define BUTTON_JOY_PIN 22 
 
 // Variáveis globais
 ssd1306_t ssd;
@@ -97,7 +92,7 @@ volatile uint amplitude_peak_count = 0, max_peak = 0, sum_peaks = 0, count_peaks
 void setup();
 void setup_adc_dma();
 void init_buttons();
-void init_leds_buzzers();
+void init_buzzers();
 void init_i2c_display(ssd1306_t *ssd);
 void init_matrix_leds();
 void button_irq_handler(uint gpio, uint32_t events);
@@ -142,7 +137,7 @@ void main() {
 
 void setup() {
     init_buttons();
-    init_leds_buzzers();
+    void init_buzzers();
     init_matrix_leds();
     setup_adc_dma();
     init_i2c_display(&ssd);
@@ -158,18 +153,7 @@ void init_buttons() {
     }
 }
 
-void init_leds_buzzers() {
-    // LEDs
-    uint8_t leds[3] = {LED_G_PIN, LED_B_PIN, LED_R_PIN};
-    for (uint8_t i = 0; i < 3; i++) {
-        gpio_set_function(leds[i], GPIO_FUNC_PWM);
-        uint slice = pwm_gpio_to_slice_num(leds[i]);
-        pwm_set_clkdiv(slice, CLK_DIV);
-        pwm_set_wrap(slice, WRAP);
-        pwm_set_chan_level(slice, PWM_CHAN_A, 0);
-        pwm_set_enabled(slice, true);
-    }
-
+void init_buzzers() {
     // Buzzers
     gpio_set_function(BUZZER_A_PIN, GPIO_FUNC_PWM);  // PWM 5A
     gpio_set_function(BUZZER_B_PIN, GPIO_FUNC_PWM);  // PWM 5B
