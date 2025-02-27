@@ -1,4 +1,4 @@
-#  Monitoramento de Barulho com Sistemas Visuais e Sonoros de Aviso.
+# Monitor de Silêncio com Alertas Visuais e Sonoros.
 
 Este projeto implementa a conversão ADC de entradas analógicas de um microfone MAX4466EXK para, a partir disso, realizar processamentos desses dados visando a emissão de alertas quando o barulho ambiente ultrapassar limites determinados. Além disso, são feitos envios de relatórios via comunicação serial UART com informações detalhadas sobre o nível de ruído presente nas proximidades da placa.  O objetivo é fornecer um equipamento dinâmico que colabore no monitoramento de ambientes que exigem um determinado nível de silêncio, como bibliotecas, salas de estudo ou alas hospitalares. Esse projeto foi realizado em um **Raspberry Pi Pico W** e o código é desenvolvido em **C** para sistemas embarcados e foi implementado na placa voltada a aprendizagem BitDogLab.
 
@@ -53,7 +53,7 @@ Este projeto implementa a conversão ADC de entradas analógicas de um microfone
 
 
 ## Vídeo Demonstrativo
-Assista aqui: <https://drive.google.com/file/d/1YoxnSxm_CrV9srb5r7XMkOmUvMzc1QBQ/view?usp=sharing>
+Assista aqui: <https://drive.google.com/file/d/1ntCjtM3N2V1FHxkgRuypB-mz5FX91FBW/view?usp=sharing>
 
 
 ## Autor

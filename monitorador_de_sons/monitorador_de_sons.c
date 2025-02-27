@@ -1,3 +1,9 @@
+/*
+Autor: Elmer Carvalho 
+-- Projeto Final do Embarca Tech
+Data de Finalização: 26/02/2025
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "pico/bootrom.h"
